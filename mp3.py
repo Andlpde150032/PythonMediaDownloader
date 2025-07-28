@@ -320,6 +320,18 @@ class DownloaderApp:
             self.save_last_directory(path)
             print(f"Output directory set to: {path}\n")
 
+    def open_folder(self, path):
+        """Opens the specified folder in the default file explorer."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(os.path.realpath(path))
+            elif sys.platform == "darwin": # macOS
+                subprocess.run(["open", path])
+            else: # Linux
+                subprocess.run(["xdg-open", path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open folder: {e}")
+
     def toggle_controls(self, is_active):
         state = tk.NORMAL if is_active else tk.DISABLED
         self.add_to_queue_button.config(state=state)
@@ -397,7 +409,12 @@ class DownloaderApp:
 
         self.is_downloading = False
         self.root.after(0, self.toggle_controls, True)
-        self.root.after(0, lambda: messagebox.showinfo("Complete", "The download queue has finished processing."))
+        
+        def on_completion():
+            messagebox.showinfo("Complete", "The download queue has finished processing.")
+            self.open_folder(directory)
+        
+        self.root.after(0, on_completion)
 
     def update_job_status(self, job_id, status_text):
         """Safely updates a job's status in the Treeview from any thread."""
