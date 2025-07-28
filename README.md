@@ -1,14 +1,14 @@
 # All-in-One Media Downloader
 <img width="647" height="580" alt="down" src="https://github.com/user-attachments/assets/03f5e0a1-8efd-4e17-9980-95a381920f13" />
 
-
-
-A Python-based GUI application for downloading audio (MP3) and video (MP4) files from various online sources using yt-dlp.
+A Python-based GUI application for downloading audio and video files from various online sources using yt-dlp.
 
 ## Features
 
 - **User-friendly GUI**: Clean and modern interface built with tkinter
-- **Multiple Format Support**: Download as MP3 audio or MP4 video
+- **Multiple Format Support**: Download audio as MP3, WAV, or M4A; video as MP4, MKV, or WEBM
+- **Trimming**: Optionally trim downloads by specifying start and end times (HH:MM:SS)
+- **Remembers Last Directory**: Automatically loads your last used download folder
 - **Progress Tracking**: Real-time download progress with status console
 - **Custom Save Location**: Choose where to save your downloaded files
 - **Cross-platform**: Works on Windows, macOS, and Linux
@@ -61,10 +61,14 @@ python mp3.py
 ### How to Use
 
 1. **Enter Media URL**: Paste the URL of the video/audio you want to download
-2. **Choose Save Location**: Click "Browse..." to select where to save files
-3. **Select Format**: Choose between "Audio (MP3)" or "Video (MP4)"
-4. **Start Download**: Click the "Download" button
-5. **Monitor Progress**: Watch the progress bar and status console for updates
+2. **Choose Save Location**: Click "Browse..." to select where to save files (remembers your last used folder)
+3. **Select Format**:
+   - Choose between "Audio" or "Video"
+   - For audio: select MP3, WAV, or M4A
+   - For video: select MP4, MKV, or WEBM
+4. **(Optional) Trimming**: Enter start and/or end time (HH:MM:SS) to download only a segment
+5. **Start Download**: Click the "Download" button
+6. **Monitor Progress**: Watch the progress bar and status console for updates
 
 ### Supported Sources
 
@@ -78,10 +82,11 @@ This tool supports downloading from various platforms including:
 
 ```
 mp3downloader/
-├── mp3.py              # Main application file
+├── mp3.py                 # Main application file
 ├── install_libraries.bat  # Automatic library installer
-├── run.bat             # Application launcher
-└── README.md           # This file
+├── run.bat                # Application launcher
+├── config.txt             # Stores last used directory (auto-generated)
+└── README.md              # This file
 ```
 
 ## Troubleshooting
@@ -112,8 +117,9 @@ If you encounter issues:
 
 - **Framework**: tkinter with ttkthemes for modern UI
 - **Download Engine**: yt-dlp (YouTube-DL fork)
-- **Audio Processing**: FFmpeg for MP3 conversion
+- **Audio/Video Processing**: FFmpeg for conversion and trimming
 - **Threading**: Downloads run in background threads to keep GUI responsive
+- **Config File**: Remembers last used directory in `config.txt`
 
 ## License
 

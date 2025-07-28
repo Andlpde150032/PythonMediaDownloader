@@ -4,7 +4,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import threading
-import re
+import subprocess
 from ttkthemes import ThemedTk
 
 # Configuration file to store the last used directory
@@ -27,11 +27,55 @@ class StdoutRedirector:
     def flush(self):
         pass
 
+class CompletionDialog(tk.Toplevel):
+    """Custom dialog window shown on download completion."""
+    def __init__(self, parent, title, directory_path):
+        super().__init__(parent)
+        self.title(title)
+        self.directory_path = directory_path
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(False, False)
+
+        main_frame = ttk.Frame(self, padding="20")
+        main_frame.pack(expand=True, fill=tk.BOTH)
+
+        message = "Download process finished!"
+        ttk.Label(main_frame, text=message, font=('Segoe UI', 10)).pack(pady=(0, 20))
+
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack()
+
+        open_button = ttk.Button(button_frame, text="Open Folder", command=self.open_folder)
+        open_button.pack(side=tk.LEFT, padx=10)
+
+        ok_button = ttk.Button(button_frame, text="OK", command=self.destroy)
+        ok_button.pack(side=tk.LEFT, padx=10)
+
+        # Center the dialog over the parent window
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.winfo_height() // 2)
+        self.geometry(f"+{x}+{y}")
+        self.focus_set()
+
+    def open_folder(self):
+        try:
+            if sys.platform == "win32":
+                os.startfile(self.directory_path)
+            elif sys.platform == "darwin": # macOS
+                subprocess.call(["open", self.directory_path])
+            else: # Linux
+                subprocess.call(["xdg-open", self.directory_path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open folder: {e}", parent=self)
+        self.destroy()
+
 class DownloaderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("All-in-One Media Downloader")
-        self.root.geometry("650x650") # Increased height for new options
+        self.root.geometry("650x650") 
         self.root.resizable(False, False)
 
         # --- Style Configuration ---
@@ -94,7 +138,6 @@ class DownloaderApp:
         ttk.Label(trim_frame, text="End (HH:MM:SS):").grid(row=1, column=0, sticky=tk.W, pady=(5,0))
         self.end_time_entry = ttk.Entry(trim_frame, width=12)
         self.end_time_entry.grid(row=1, column=1, padx=5, pady=(5,0))
-
 
         # --- Download Button ---
         self.download_button = ttk.Button(main_frame, text="Download", command=self.start_download_thread)
@@ -176,7 +219,6 @@ class DownloaderApp:
             start_time = self.start_time_entry.get().strip()
             end_time = self.end_time_entry.get().strip()
 
-            # Base options
             ydl_opts = {
                 'outtmpl': os.path.join(directory, '%(title)s.%(ext)s'),
                 'noplaylist': True,
@@ -184,7 +226,6 @@ class DownloaderApp:
                 'noprogress': True,
             }
 
-            # --- Postprocessor and Trimming Logic ---
             postprocessor_args = []
             if start_time:
                 postprocessor_args.extend(['-ss', start_time])
@@ -196,15 +237,10 @@ class DownloaderApp:
                 print(f"Starting audio download (Format: {audio_format})...")
                 ydl_opts.update({
                     'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': audio_format,
-                        'preferredquality': '192',
-                    }],
+                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': audio_format, 'preferredquality': '192'}],
                 })
-                # Add trimming args if specified
                 if postprocessor_args:
-                    ydl_opts['postprocessor_args'] = postprocessor_args
+                    ydl_opts.setdefault('postprocessor_args', {}).setdefault('extractaudio', []).extend(postprocessor_args)
 
             else: # video
                 video_format = self.video_format.get()
@@ -213,10 +249,8 @@ class DownloaderApp:
                     'format': f'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext={video_format}]/best',
                     'merge_output_format': video_format,
                 })
-                # Add trimming args if specified
                 if postprocessor_args:
-                     ydl_opts['postprocessor_args'] = ['-c', 'copy'] + postprocessor_args
-
+                     ydl_opts.setdefault('postprocessor_args', {}).setdefault('merger', []).extend(['-c', 'copy'] + postprocessor_args)
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
@@ -225,8 +259,12 @@ class DownloaderApp:
             print(f"\nAn error occurred: {e}")
         finally:
             self.download_button.config(state=tk.NORMAL, text="Download")
-            messagebox.showinfo("Complete", "Download process finished. Check the status window for details.")
+            # Schedule the custom dialog to be shown on the main GUI thread
+            self.root.after(0, self.show_completion_dialog, directory)
 
+    def show_completion_dialog(self, directory):
+        """Creates and shows the custom completion dialog."""
+        CompletionDialog(self.root, "Complete", directory)
 
     def yt_dlp_hook(self, d):
         if d['status'] == 'downloading':
@@ -242,7 +280,6 @@ class DownloaderApp:
         elif d['status'] == 'error':
             print("\nAn error occurred during download.")
             self.progress_bar['value'] = 0
-
 
 if __name__ == "__main__":
     root = ThemedTk(theme="arc")
