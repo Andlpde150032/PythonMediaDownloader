@@ -7,6 +7,9 @@ import threading
 import re
 from ttkthemes import ThemedTk
 
+# Configuration file to store the last used directory
+CONFIG_FILE = "config.txt"
+
 class StdoutRedirector:
     """A class to redirect stdout to a Tkinter Text widget."""
     def __init__(self, text_widget):
@@ -56,7 +59,8 @@ class DownloaderApp:
         dir_frame = ttk.LabelFrame(options_container, text="Save Location", padding="10")
         dir_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 10))
         
-        self.output_path = tk.StringVar(value=os.getcwd())
+        # Load the last used directory on startup
+        self.output_path = tk.StringVar(value=self.load_last_directory())
         dir_entry = ttk.Entry(dir_frame, textvariable=self.output_path, state='readonly', font=('Segoe UI', 9))
         dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         browse_button = ttk.Button(dir_frame, text="Browse...", command=self.select_directory, style='TButton')
@@ -90,10 +94,36 @@ class DownloaderApp:
         sys.stdout = StdoutRedirector(self.status_box)
         sys.stderr = StdoutRedirector(self.status_box)
 
+    def save_last_directory(self, path):
+        """Saves the given path to the config file."""
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                f.write(path)
+        except Exception as e:
+            print(f"Error saving config file: {e}")
+
+    def load_last_directory(self):
+        """Loads the last used path from the config file."""
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r') as f:
+                    path = f.read().strip()
+                    # Ensure the saved path still exists
+                    if os.path.isdir(path):
+                        return path
+            # Return current working directory if file doesn't exist or path is invalid
+            return os.getcwd()
+        except Exception as e:
+            print(f"Error loading config file: {e}")
+            return os.getcwd()
+
     def select_directory(self):
-        path = filedialog.askdirectory(title="Select a Folder")
+        # Open file dialog starting from the current path
+        initial_dir = self.output_path.get()
+        path = filedialog.askdirectory(title="Select a Folder", initialdir=initial_dir)
         if path:
             self.output_path.set(path)
+            self.save_last_directory(path) # Save the new directory
             print(f"Output directory set to: {path}\n")
 
     def start_download_thread(self):
@@ -142,7 +172,6 @@ class DownloaderApp:
             print(f"\nAn error occurred: {e}")
         finally:
             self.download_button.config(state=tk.NORMAL, text="Download")
-            # FIXED: Removed the faulty playlist check and now shows a single, reliable completion message.
             messagebox.showinfo("Complete", "Download process finished. Check the status window for details.")
 
 
