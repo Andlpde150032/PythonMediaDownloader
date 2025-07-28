@@ -34,6 +34,7 @@ class DownloaderApp:
         self.root.resizable(True, True)
 
         self.download_queue = []
+        self.job_counter = 0
         self.is_downloading = False
 
         # --- Style Configuration ---
@@ -93,7 +94,7 @@ class DownloaderApp:
         self.add_to_queue_button.pack(expand=True, fill=tk.BOTH)
 
         # --- Queue Management Frame ---
-        queue_frame = ttk.LabelFrame(controls_frame, text="Download Queue", padding="10")
+        queue_frame = ttk.LabelFrame(controls_frame, text="Download Queue (Click cell to edit)", padding="10")
         queue_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # --- Treeview for Queue Display ---
@@ -106,8 +107,9 @@ class DownloaderApp:
         self.queue_tree.column('type', width=60, anchor=tk.CENTER)
         self.queue_tree.column('format', width=60, anchor=tk.CENTER)
         self.queue_tree.column('trim', width=120)
-        self.queue_tree.column('status', width=100, anchor=tk.CENTER)
+        self.queue_tree.column('status', width=100, anchor=tk.W)
         self.queue_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.queue_tree.bind("<Button-1>", self.on_tree_click)
         
         scrollbar = ttk.Scrollbar(queue_frame, orient=tk.VERTICAL, command=self.queue_tree.yview)
         self.queue_tree.configure(yscroll=scrollbar.set)
@@ -146,6 +148,96 @@ class DownloaderApp:
         sys.stdout = StdoutRedirector(self.status_box)
         sys.stderr = StdoutRedirector(self.status_box)
 
+    def on_tree_click(self, event):
+        """Handle single-click events on the queue tree for in-place editing."""
+        if self.is_downloading: return
+
+        region = self.queue_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        column_id = self.queue_tree.identify_column(event.x)
+        column_index = int(column_id.replace('#', '')) - 1
+        column_name = self.queue_tree['columns'][column_index]
+        
+        item_id = self.queue_tree.identify_row(event.y)
+        if not item_id: return
+
+        job = next((j for j in self.download_queue if j['id'] == item_id), None)
+        if not job: return
+
+        if column_name == 'type':
+            self.create_cell_editor(item_id, column_name, ['Audio', 'Video'])
+        elif column_name == 'format':
+            values = ['mp3', 'wav', 'm4a'] if job['type'] == 'audio' else ['mp4', 'mkv', 'webm']
+            self.create_cell_editor(item_id, column_name, values)
+        elif column_name == 'trim':
+            self.create_trim_editor_dialog(job)
+
+    def create_cell_editor(self, item_id, column_name, values):
+        """Create a combobox over the selected cell for editing."""
+        x, y, width, height = self.queue_tree.bbox(item_id, column_name)
+        
+        current_value = self.queue_tree.set(item_id, column_name)
+        
+        editor = ttk.Combobox(self.queue_tree, values=values, state='readonly')
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.set(current_value)
+        editor.focus_force()
+
+        editor.after(10, lambda: editor.event_generate('<F4>'))
+
+        def on_editor_close(event):
+            new_value = editor.get()
+            editor.destroy()
+            
+            job = next((j for j in self.download_queue if j['id'] == item_id), None)
+            if not job: return
+
+            if column_name == 'type':
+                job['type'] = new_value.lower()
+                job['format'] = 'mp3' if job['type'] == 'audio' else 'mp4'
+            elif column_name == 'format':
+                job['format'] = new_value
+            
+            self.update_queue_display(clear_selection=True)
+
+        editor.bind("<FocusOut>", on_editor_close)
+        editor.bind("<Return>", on_editor_close)
+        editor.bind("<<ComboboxSelected>>", on_editor_close)
+
+    def create_trim_editor_dialog(self, job):
+        """Create a dialog to edit the start and end times for a job."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Trim Times")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack()
+
+        ttk.Label(frame, text="Start Time (HH:MM:SS):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        start_entry = ttk.Entry(frame)
+        start_entry.grid(row=0, column=1, padx=5, pady=5)
+        start_entry.insert(0, job['start_time'])
+
+        ttk.Label(frame, text="End Time (HH:MM:SS):").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        end_entry = ttk.Entry(frame)
+        end_entry.grid(row=1, column=1, padx=5, pady=5)
+        end_entry.insert(0, job['end_time'])
+
+        def save_and_close():
+            job['start_time'] = start_entry.get().strip()
+            job['end_time'] = end_entry.get().strip()
+            self.update_queue_display(clear_selection=True)
+            dialog.destroy()
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=2, columnspan=2, pady=10)
+        ttk.Button(button_frame, text="OK", command=save_and_close).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
     def toggle_format_options(self):
         if self.download_type.get() == "audio":
             self.audio_combo.config(state='readonly')
@@ -162,8 +254,9 @@ class DownloaderApp:
             return
 
         for url in urls:
+            self.job_counter += 1
             job = {
-                'id': f'job_{len(self.download_queue)}',
+                'id': f'job_{self.job_counter}',
                 'url': url,
                 'type': self.download_type.get(),
                 'format': self.audio_format.get() if self.download_type.get() == 'audio' else self.video_format.get(),
@@ -176,12 +269,17 @@ class DownloaderApp:
         self.update_queue_display()
         self.url_text.delete("1.0", tk.END)
 
-    def update_queue_display(self):
+    def update_queue_display(self, clear_selection=False):
+        """Refreshes the queue display. Can optionally clear the current selection."""
+        selected_items = self.queue_tree.selection()
         self.queue_tree.delete(*self.queue_tree.get_children())
         for i, job in enumerate(self.download_queue):
             trim_str = f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full"
             values = (i + 1, job['url'], job['type'].capitalize(), job['format'], trim_str, job['status'])
             self.queue_tree.insert('', tk.END, iid=job['id'], values=values)
+        
+        if selected_items and not clear_selection:
+            self.queue_tree.selection_set(selected_items)
 
     def remove_selected(self):
         selected_items = self.queue_tree.selection()
@@ -231,6 +329,7 @@ class DownloaderApp:
         self.start_queue_button.config(text="Start Queue" if is_active else "Downloading...")
 
     def start_download_thread(self):
+        if self.is_downloading: return
         if not self.download_queue:
             messagebox.showerror("Error", "The download queue is empty.")
             return
@@ -246,18 +345,17 @@ class DownloaderApp:
         
     def run_queue_download(self):
         directory = self.output_path.get()
-        for i, job in enumerate(self.download_queue):
+        for job in self.download_queue:
             if job['status'] != 'Pending': continue
 
             try:
-                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Downloading...'))
+                self.update_job_status(job['id'], 'Downloading...')
                 self.progress_bar['value'] = 0
                 
-                # --- FIXED: Rewrote ydl_opts construction for stability ---
                 ydl_opts = {
                     'outtmpl': os.path.join(directory, '%(title)s.%(ext)s'),
                     'noplaylist': True,
-                    'progress_hooks': [self.yt_dlp_hook],
+                    'progress_hooks': [lambda d, j=job: self.yt_dlp_hook(d, j)],
                     'noprogress': True,
                 }
                 
@@ -290,25 +388,42 @@ class DownloaderApp:
                     ydl.download([job['url']])
                 
                 job['status'] = 'Complete'
-                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Complete'))
+                self.update_job_status(job['id'], 'Complete')
 
             except Exception as e:
                 job['status'] = 'Error'
-                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Error'))
+                self.update_job_status(job['id'], 'Error')
                 print(f"\nERROR downloading {job['url']}: {e}")
 
         self.is_downloading = False
         self.root.after(0, self.toggle_controls, True)
         self.root.after(0, lambda: messagebox.showinfo("Complete", "The download queue has finished processing."))
 
-    def yt_dlp_hook(self, d):
+    def update_job_status(self, job_id, status_text):
+        """Safely updates a job's status in the Treeview from any thread."""
+        try:
+            job_index = next((i for i, job in enumerate(self.download_queue) if job['id'] == job_id), None)
+            if job_index is None: return
+
+            job = self.download_queue[job_index]
+            trim_str = f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full"
+            new_values = (job_index + 1, job['url'], job['type'].capitalize(), job['format'], trim_str, status_text)
+            
+            self.root.after(0, lambda j=job_id, v=new_values: self.queue_tree.item(j, values=v))
+        except Exception as e:
+            print(f"Error updating GUI: {e}")
+
+    def yt_dlp_hook(self, d, job):
+        """Hook to update progress. Now receives the current job."""
         if d['status'] == 'downloading':
             total_bytes = d.get('total_bytes_estimate') or d.get('total_bytes')
             if total_bytes:
                 percentage = (d.get('downloaded_bytes', 0) / total_bytes) * 100
                 self.progress_bar['value'] = percentage
+                self.update_job_status(job['id'], f'Downloading {percentage:.1f}%')
         elif d['status'] == 'finished':
             self.progress_bar['value'] = 100
+            self.update_job_status(job['id'], 'Processing...')
             print("\nDownload finished, now processing...")
 
 if __name__ == "__main__":

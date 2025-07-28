@@ -1,15 +1,17 @@
 # All-in-One Media Downloader
 <img width="648" height="675" alt="Screenshot_17" src="https://github.com/user-attachments/assets/7d39bd0d-3fa4-484a-ab22-1b9109a516da" />
 
-
-
-A Python-based GUI application for downloading audio (MP3) and video (MP4) files from various online sources using yt-dlp.
+A Python-based GUI application for downloading audio and video files from various online sources using yt-dlp.
 
 ## Features
 
-- **User-friendly GUI**: Clean and modern interface built with tkinter
+- **Batch Download & Queue Management**: Add multiple links, manage a download queue, and process all at once
+- **In-Place Editing**: Click on the queue to edit type (audio/video), format, or trim times for any job, even after adding
+- **Live Per-Job Status**: See real-time status for each item (Pending, Downloading %, Processing, Complete, Error)
+- **User-friendly, Resizable GUI**: Modern, resizable interface with queue and status panels
 - **Multiple Format Support**: Download audio as MP3, WAV, or M4A; video as MP4, MKV, or WEBM
-- **Trimming**: Optionally trim downloads by specifying start and end times (HH:MM:SS)
+- **Trimming**: Optionally trim each download by specifying start and end times (HH:MM:SS)
+- **Queue Controls**: Remove selected, clear all, and reorder downloads
 - **Remembers Last Directory**: Automatically loads your last used download folder
 - **Progress Tracking**: Real-time download progress with status console
 - **Custom Save Location**: Choose where to save your downloaded files
@@ -62,15 +64,18 @@ python mp3.py
 
 ### How to Use
 
-1. **Enter Media URL**: Paste the URL of the video/audio you want to download
-2. **Choose Save Location**: Click "Browse..." to select where to save files (remembers your last used folder)
-3. **Select Format**:
-   - Choose between "Audio" or "Video"
-   - For audio: select MP3, WAV, or M4A
-   - For video: select MP4, MKV, or WEBM
-4. **(Optional) Trimming**: Enter start and/or end time (HH:MM:SS) to download only a segment
-5. **Start Download**: Click the "Download" button
-6. **Monitor Progress**: Watch the progress bar and status console for updates
+1. **Add Links to Queue**: Paste one or more URLs (one per line) in the "Add Links to Queue" box.
+2. **Set Download Options** (applies to all links being added):
+   - **Format & Type**: Choose Audio (MP3, WAV, M4A) or Video (MP4, MKV, WEBM)
+   - **Trimming (Optional)**: Enter start and/or end time (HH:MM:SS) to download only a segment
+3. **Add to Queue**: Click "Add to Queue" to add all links with the selected options.
+4. **Edit Queue Items**: Click on any cell in the queue to change type, format, or trim times for that job—even after adding it. A dialog or dropdown will appear for editing.
+5. **Queue Management**:
+   - Remove selected items, clear the queue, or review status for each item
+   - You can add more links with different options at any time
+6. **Choose Save Location**: Click "Browse..." to select where to save files (remembers your last used folder)
+7. **Start Download**: Click "Start Queue" to begin downloading all items in the queue
+8. **Monitor Progress**: Each item shows its own status (Pending, Downloading %, Processing, Complete, Error) and the progress bar shows current download progress
 
 ### Supported Sources
 
@@ -122,6 +127,10 @@ If you encounter issues:
 - **Audio/Video Processing**: FFmpeg for conversion and trimming
 - **Threading**: Downloads run in background threads to keep GUI responsive
 - **Config File**: Remembers last used directory in `config.txt`
+- **Batch/Queue Logic**: Each download in the queue is processed with its own options and status
+- **In-Place Editing**: Clickable queue cells for type, format, and trim (with dialogs/dropdowns)
+- **Live Status**: Per-job status updates, including download percentage and error reporting
+- **Resizable GUI**: The window and queue are fully resizable for better usability
 
 ## License
 
