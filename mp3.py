@@ -26,6 +26,49 @@ class StdoutRedirector:
     def flush(self):
         pass
 
+class CompletionDialog(tk.Toplevel):
+    """Custom dialog window shown on download completion."""
+    def __init__(self, parent, title, directory_path):
+        super().__init__(parent)
+        self.title(title)
+        self.directory_path = directory_path
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(False, False)
+
+        main_frame = ttk.Frame(self, padding="20")
+        main_frame.pack(expand=True, fill=tk.BOTH)
+
+        message = "The download queue has finished processing."
+        ttk.Label(main_frame, text=message, font=('Segoe UI', 10)).pack(pady=(0, 20))
+
+        ok_button = ttk.Button(main_frame, text="OK", command=self.on_ok)
+        ok_button.pack()
+
+        # Center the dialog over the parent window
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.winfo_height() // 2)
+        self.geometry(f"+{x}+{y}")
+        self.focus_set()
+
+    def on_ok(self):
+        """Handle the OK button click."""
+        self.destroy() # Close the dialog first
+        self.open_folder()
+
+    def open_folder(self):
+        """Opens the specified folder in the default file explorer."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(os.path.realpath(self.directory_path))
+            elif sys.platform == "darwin": # macOS
+                subprocess.run(["open", self.directory_path])
+            else: # Linux
+                subprocess.run(["xdg-open", self.directory_path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open folder: {e}", parent=self.master)
+
 class DownloaderApp:
     def __init__(self, root):
         self.root = root
@@ -320,18 +363,6 @@ class DownloaderApp:
             self.save_last_directory(path)
             print(f"Output directory set to: {path}\n")
 
-    def open_folder(self, path):
-        """Opens the specified folder in the default file explorer."""
-        try:
-            if sys.platform == "win32":
-                os.startfile(os.path.realpath(path))
-            elif sys.platform == "darwin": # macOS
-                subprocess.run(["open", path])
-            else: # Linux
-                subprocess.run(["xdg-open", path])
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not open folder: {e}")
-
     def toggle_controls(self, is_active):
         state = tk.NORMAL if is_active else tk.DISABLED
         self.add_to_queue_button.config(state=state)
@@ -409,12 +440,7 @@ class DownloaderApp:
 
         self.is_downloading = False
         self.root.after(0, self.toggle_controls, True)
-        
-        def on_completion():
-            messagebox.showinfo("Complete", "The download queue has finished processing.")
-            self.open_folder(directory)
-        
-        self.root.after(0, on_completion)
+        self.root.after(0, lambda: CompletionDialog(self.root, "Complete", directory))
 
     def update_job_status(self, job_id, status_text):
         """Safely updates a job's status in the Treeview from any thread."""
