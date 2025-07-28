@@ -1,5 +1,6 @@
 # All-in-One Media Downloader
-<img width="648" height="675" alt="Screenshot_17" src="https://github.com/user-attachments/assets/7d39bd0d-3fa4-484a-ab22-1b9109a516da" />
+<img width="1919" height="1032" alt="Screenshot_17" src="https://github.com/user-attachments/assets/6ff8e259-6792-4e44-b463-a092895847f8" />
+
 
 A Python-based GUI application for downloading audio and video files from various online sources using yt-dlp.
 
