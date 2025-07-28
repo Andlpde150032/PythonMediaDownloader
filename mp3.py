@@ -16,7 +16,6 @@ class StdoutRedirector:
         self.text_space = text_widget
 
     def write(self, string):
-        # Ensure updates happen on the main thread to prevent GUI errors
         self.text_space.after(0, self.insert_text, string)
 
     def insert_text(self, string):
@@ -27,130 +26,120 @@ class StdoutRedirector:
     def flush(self):
         pass
 
-class CompletionDialog(tk.Toplevel):
-    """Custom dialog window shown on download completion."""
-    def __init__(self, parent, title, directory_path):
-        super().__init__(parent)
-        self.title(title)
-        self.directory_path = directory_path
-        self.transient(parent)
-        self.grab_set()
-        self.resizable(False, False)
-
-        main_frame = ttk.Frame(self, padding="20")
-        main_frame.pack(expand=True, fill=tk.BOTH)
-
-        message = "Download process finished!"
-        ttk.Label(main_frame, text=message, font=('Segoe UI', 10)).pack(pady=(0, 20))
-
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack()
-
-        open_button = ttk.Button(button_frame, text="Open Folder", command=self.open_folder)
-        open_button.pack(side=tk.LEFT, padx=10)
-
-        ok_button = ttk.Button(button_frame, text="OK", command=self.destroy)
-        ok_button.pack(side=tk.LEFT, padx=10)
-
-        # Center the dialog over the parent window
-        self.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.winfo_width() // 2)
-        y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.winfo_height() // 2)
-        self.geometry(f"+{x}+{y}")
-        self.focus_set()
-
-    def open_folder(self):
-        try:
-            if sys.platform == "win32":
-                os.startfile(self.directory_path)
-            elif sys.platform == "darwin": # macOS
-                subprocess.call(["open", self.directory_path])
-            else: # Linux
-                subprocess.call(["xdg-open", self.directory_path])
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not open folder: {e}", parent=self)
-        self.destroy()
-
 class DownloaderApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("All-in-One Media Downloader")
-        self.root.geometry("650x650") 
-        self.root.resizable(False, False)
+        self.root.title("All-in-One Media Downloader - Batch Edition")
+        self.root.geometry("800x750")
+        self.root.resizable(True, True)
+
+        self.download_queue = []
+        self.is_downloading = False
 
         # --- Style Configuration ---
         self.style = ttk.Style(self.root)
         self.style.configure('TLabel', font=('Segoe UI', 10))
-        self.style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=10)
-        self.style.configure('TRadiobutton', font=('Segoe UI', 10))
+        self.style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=8)
+        self.style.configure('Treeview.Heading', font=('Segoe UI', 10, 'bold'))
         self.style.configure('TLabelframe.Label', font=('Segoe UI', 11, 'bold'))
-        self.style.configure('TCombobox', font=('Segoe UI', 10))
 
-        # --- Main Frame ---
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # --- Main Paned Window for resizable layout ---
+        paned_window = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
+        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # --- Top Frame for Controls ---
+        controls_frame = ttk.Frame(paned_window, padding="10")
+        paned_window.add(controls_frame, weight=0)
 
         # --- URL Input ---
-        url_label = ttk.Label(main_frame, text="Media URL:")
-        url_label.pack(fill=tk.X, padx=5, pady=(0, 5))
-        self.url_entry = ttk.Entry(main_frame, font=('Segoe UI', 10))
-        self.url_entry.pack(fill=tk.X, padx=5, pady=(0, 15))
+        url_frame = ttk.LabelFrame(controls_frame, text="Add Links to Queue", padding="10")
+        url_frame.pack(fill=tk.X, pady=(0, 10))
+        self.url_text = tk.Text(url_frame, height=4, font=('Segoe UI', 10))
+        self.url_text.pack(fill=tk.X, expand=True)
+
+        # --- Settings and Add to Queue Button ---
+        settings_container = ttk.Frame(controls_frame)
+        settings_container.pack(fill=tk.X, expand=True, pady=(0, 10))
         
-        # --- Save Location ---
-        dir_frame = ttk.LabelFrame(main_frame, text="Save Location", padding="10")
-        dir_frame.pack(fill=tk.X, padx=5, pady=(0, 15))
-        self.output_path = tk.StringVar(value=self.load_last_directory())
-        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_path, state='readonly', font=('Segoe UI', 9))
-        dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
-        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.select_directory, style='TButton')
-        browse_button.pack(side=tk.RIGHT)
-
-        # --- Download Options ---
-        options_container = ttk.Frame(main_frame)
-        options_container.pack(fill=tk.X, expand=True, pady=(0, 15))
-
         # --- Format Selection ---
-        format_frame = ttk.LabelFrame(options_container, text="Format Selection", padding="10")
-        format_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 10))
-        
+        format_frame = ttk.LabelFrame(settings_container, text="Format & Type", padding="10")
+        format_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         self.download_type = tk.StringVar(value="audio")
         audio_radio = ttk.Radiobutton(format_frame, text="Audio", variable=self.download_type, value="audio", command=self.toggle_format_options)
-        audio_radio.grid(row=0, column=0, sticky=tk.W, pady=(0,5))
+        audio_radio.grid(row=0, column=0, sticky=tk.W)
         video_radio = ttk.Radiobutton(format_frame, text="Video", variable=self.download_type, value="video", command=self.toggle_format_options)
         video_radio.grid(row=1, column=0, sticky=tk.W)
-
         self.audio_format = tk.StringVar(value='mp3')
-        self.audio_combo = ttk.Combobox(format_frame, textvariable=self.audio_format, values=['mp3', 'wav', 'm4a'], state='readonly', width=10)
-        self.audio_combo.grid(row=0, column=1, padx=10)
-
+        self.audio_combo = ttk.Combobox(format_frame, textvariable=self.audio_format, values=['mp3', 'wav', 'm4a'], state='readonly', width=8)
+        self.audio_combo.grid(row=0, column=1, padx=5)
         self.video_format = tk.StringVar(value='mp4')
-        self.video_combo = ttk.Combobox(format_frame, textvariable=self.video_format, values=['mp4', 'mkv', 'webm'], state='disabled', width=10)
-        self.video_combo.grid(row=1, column=1, padx=10)
+        self.video_combo = ttk.Combobox(format_frame, textvariable=self.video_format, values=['mp4', 'mkv', 'webm'], state='disabled', width=8)
+        self.video_combo.grid(row=1, column=1, padx=5)
 
         # --- Trimming Options ---
-        trim_frame = ttk.LabelFrame(options_container, text="Trimming (Optional)", padding="10")
-        trim_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 5))
-        
-        ttk.Label(trim_frame, text="Start (HH:MM:SS):").grid(row=0, column=0, sticky=tk.W)
-        self.start_time_entry = ttk.Entry(trim_frame, width=12)
+        trim_frame = ttk.LabelFrame(settings_container, text="Trimming (Optional)", padding="10")
+        trim_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        ttk.Label(trim_frame, text="Start:").grid(row=0, column=0, sticky=tk.W)
+        self.start_time_entry = ttk.Entry(trim_frame, width=10)
         self.start_time_entry.grid(row=0, column=1, padx=5)
-        
-        ttk.Label(trim_frame, text="End (HH:MM:SS):").grid(row=1, column=0, sticky=tk.W, pady=(5,0))
-        self.end_time_entry = ttk.Entry(trim_frame, width=12)
-        self.end_time_entry.grid(row=1, column=1, padx=5, pady=(5,0))
+        ttk.Label(trim_frame, text="End:").grid(row=1, column=0, sticky=tk.W)
+        self.end_time_entry = ttk.Entry(trim_frame, width=10)
+        self.end_time_entry.grid(row=1, column=1, padx=5)
 
-        # --- Download Button ---
-        self.download_button = ttk.Button(main_frame, text="Download", command=self.start_download_thread)
-        self.download_button.pack(fill=tk.X, padx=5, pady=15)
+        # --- Add to Queue Button ---
+        add_button_frame = ttk.Frame(settings_container)
+        add_button_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self.add_to_queue_button = ttk.Button(add_button_frame, text="Add to Queue", command=self.add_to_queue)
+        self.add_to_queue_button.pack(expand=True, fill=tk.BOTH)
 
-        # --- Progress Bar ---
-        self.progress_bar = ttk.Progressbar(main_frame, orient='horizontal', length=100, mode='determinate')
-        self.progress_bar.pack(fill=tk.X, padx=5, pady=(0, 10))
+        # --- Queue Management Frame ---
+        queue_frame = ttk.LabelFrame(controls_frame, text="Download Queue", padding="10")
+        queue_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # --- Status Console ---
-        status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-        status_frame.pack(fill=tk.BOTH, expand=True, padx=5)
-        self.status_box = scrolledtext.ScrolledText(status_frame, font=('Courier New', 9), wrap=tk.WORD, state='normal')
+        # --- Treeview for Queue Display ---
+        columns = ('#', 'url', 'type', 'format', 'trim', 'status')
+        self.queue_tree = ttk.Treeview(queue_frame, columns=columns, show='headings')
+        for col in columns:
+            self.queue_tree.heading(col, text=col.capitalize())
+        self.queue_tree.column('#', width=40, anchor=tk.CENTER)
+        self.queue_tree.column('url', width=250)
+        self.queue_tree.column('type', width=60, anchor=tk.CENTER)
+        self.queue_tree.column('format', width=60, anchor=tk.CENTER)
+        self.queue_tree.column('trim', width=120)
+        self.queue_tree.column('status', width=100, anchor=tk.CENTER)
+        self.queue_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(queue_frame, orient=tk.VERTICAL, command=self.queue_tree.yview)
+        self.queue_tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # --- Queue Control Buttons ---
+        queue_button_frame = ttk.Frame(controls_frame)
+        queue_button_frame.pack(fill=tk.X, pady=(10, 0))
+        self.start_queue_button = ttk.Button(queue_button_frame, text="Start Queue", command=self.start_download_thread)
+        self.start_queue_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+        self.remove_button = ttk.Button(queue_button_frame, text="Remove Selected", command=self.remove_selected)
+        self.remove_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        self.clear_button = ttk.Button(queue_button_frame, text="Clear Queue", command=self.clear_queue)
+        self.clear_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+
+        # --- Bottom Frame for Progress and Status ---
+        bottom_frame = ttk.Frame(paned_window, padding="10")
+        paned_window.add(bottom_frame, weight=1)
+        
+        # --- Save Location ---
+        dir_frame = ttk.LabelFrame(bottom_frame, text="Save Location", padding="10")
+        dir_frame.pack(fill=tk.X, pady=(0, 10))
+        self.output_path = tk.StringVar(value=self.load_last_directory())
+        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_path, state='readonly')
+        dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.select_directory)
+        browse_button.pack(side=tk.RIGHT)
+
+        # --- Progress and Status ---
+        self.progress_bar = ttk.Progressbar(bottom_frame, orient='horizontal', length=100, mode='determinate')
+        self.progress_bar.pack(fill=tk.X, pady=(0, 10))
+        self.status_box = scrolledtext.ScrolledText(bottom_frame, font=('Courier New', 9), wrap=tk.WORD, height=5)
         self.status_box.pack(fill=tk.BOTH, expand=True)
         
         # Redirect stdout
@@ -158,7 +147,6 @@ class DownloaderApp:
         sys.stderr = StdoutRedirector(self.status_box)
 
     def toggle_format_options(self):
-        """Enable/disable format comboboxes based on radio button selection."""
         if self.download_type.get() == "audio":
             self.audio_combo.config(state='readonly')
             self.video_combo.config(state='disabled')
@@ -166,120 +154,162 @@ class DownloaderApp:
             self.audio_combo.config(state='disabled')
             self.video_combo.config(state='readonly')
 
+    def add_to_queue(self):
+        urls = self.url_text.get("1.0", tk.END).strip().splitlines()
+        urls = [url for url in urls if url.strip()]
+        if not urls:
+            messagebox.showwarning("Warning", "Please enter at least one URL.")
+            return
+
+        for url in urls:
+            job = {
+                'id': f'job_{len(self.download_queue)}',
+                'url': url,
+                'type': self.download_type.get(),
+                'format': self.audio_format.get() if self.download_type.get() == 'audio' else self.video_format.get(),
+                'start_time': self.start_time_entry.get().strip(),
+                'end_time': self.end_time_entry.get().strip(),
+                'status': 'Pending'
+            }
+            self.download_queue.append(job)
+        
+        self.update_queue_display()
+        self.url_text.delete("1.0", tk.END)
+
+    def update_queue_display(self):
+        self.queue_tree.delete(*self.queue_tree.get_children())
+        for i, job in enumerate(self.download_queue):
+            trim_str = f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full"
+            values = (i + 1, job['url'], job['type'].capitalize(), job['format'], trim_str, job['status'])
+            self.queue_tree.insert('', tk.END, iid=job['id'], values=values)
+
+    def remove_selected(self):
+        selected_items = self.queue_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select items to remove.")
+            return
+        
+        for item_id in selected_items:
+            self.download_queue = [job for job in self.download_queue if job['id'] != item_id]
+        
+        self.update_queue_display()
+
+    def clear_queue(self):
+        if messagebox.askyesno("Confirm", "Are you sure you want to clear the entire queue?"):
+            self.download_queue.clear()
+            self.update_queue_display()
+
     def save_last_directory(self, path):
-        """Saves the given path to the config file."""
         try:
-            with open(CONFIG_FILE, 'w') as f:
-                f.write(path)
-        except Exception as e:
-            print(f"Error saving config file: {e}")
+            with open(CONFIG_FILE, 'w') as f: f.write(path)
+        except Exception as e: print(f"Error saving config: {e}")
 
     def load_last_directory(self):
-        """Loads the last used path from the config file."""
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'r') as f:
                     path = f.read().strip()
-                    if os.path.isdir(path):
-                        return path
+                    if os.path.isdir(path): return path
             return os.getcwd()
         except Exception as e:
-            print(f"Error loading config file: {e}")
+            print(f"Error loading config: {e}")
             return os.getcwd()
 
     def select_directory(self):
-        initial_dir = self.output_path.get()
-        path = filedialog.askdirectory(title="Select a Folder", initialdir=initial_dir)
+        path = filedialog.askdirectory(title="Select a Folder", initialdir=self.output_path.get())
         if path:
             self.output_path.set(path)
             self.save_last_directory(path)
             print(f"Output directory set to: {path}\n")
 
-    def start_download_thread(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            messagebox.showerror("Error", "Please enter a media URL.")
-            return
+    def toggle_controls(self, is_active):
+        state = tk.NORMAL if is_active else tk.DISABLED
+        self.add_to_queue_button.config(state=state)
+        self.remove_button.config(state=state)
+        self.clear_button.config(state=state)
+        self.start_queue_button.config(state=state)
+        self.start_queue_button.config(text="Start Queue" if is_active else "Downloading...")
 
+    def start_download_thread(self):
+        if not self.download_queue:
+            messagebox.showerror("Error", "The download queue is empty.")
+            return
         if not os.popen('ffmpeg -version').read():
-            messagebox.showerror("Dependency Missing", "FFmpeg not found. Please install it from https://ffmpeg.org/download.html")
+            messagebox.showerror("Dependency Missing", "FFmpeg not found.")
             return
             
-        self.download_button.config(state=tk.DISABLED, text="Downloading...")
-        self.status_box.delete('1.0', tk.END)
-        self.progress_bar['value'] = 0
+        self.toggle_controls(False)
+        self.is_downloading = True
         
-        directory = self.output_path.get()
-        download_thread = threading.Thread(target=self.run_download, args=(url, directory), daemon=True)
+        download_thread = threading.Thread(target=self.run_queue_download, daemon=True)
         download_thread.start()
         
-    def run_download(self, url, directory):
-        try:
-            choice = self.download_type.get()
-            start_time = self.start_time_entry.get().strip()
-            end_time = self.end_time_entry.get().strip()
+    def run_queue_download(self):
+        directory = self.output_path.get()
+        for i, job in enumerate(self.download_queue):
+            if job['status'] != 'Pending': continue
 
-            ydl_opts = {
-                'outtmpl': os.path.join(directory, '%(title)s.%(ext)s'),
-                'noplaylist': True,
-                'progress_hooks': [self.yt_dlp_hook],
-                'noprogress': True,
-            }
+            try:
+                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Downloading...'))
+                self.progress_bar['value'] = 0
+                
+                # --- FIXED: Rewrote ydl_opts construction for stability ---
+                ydl_opts = {
+                    'outtmpl': os.path.join(directory, '%(title)s.%(ext)s'),
+                    'noplaylist': True,
+                    'progress_hooks': [self.yt_dlp_hook],
+                    'noprogress': True,
+                }
+                
+                trim_args = []
+                if job['start_time']: trim_args.extend(['-ss', job['start_time']])
+                if job['end_time']: trim_args.extend(['-to', job['end_time']])
 
-            postprocessor_args = []
-            if start_time:
-                postprocessor_args.extend(['-ss', start_time])
-            if end_time:
-                postprocessor_args.extend(['-to', end_time])
+                if job['type'] == 'audio':
+                    ydl_opts['format'] = 'bestaudio/best'
+                    ydl_opts['postprocessors'] = [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': job['format'],
+                        'preferredquality': '192',
+                    }]
+                    if trim_args:
+                        ydl_opts['postprocessors'].append({
+                            'key': 'FFmpegPostProcessor',
+                            'args': trim_args,
+                        })
+                else: # video
+                    ydl_opts['format'] = f'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext={job["format"]}]/best'
+                    ydl_opts['merge_output_format'] = job['format']
+                    if trim_args:
+                        ydl_opts['postprocessors'] = [{
+                            'key': 'FFmpegPostProcessor',
+                            'args': trim_args,
+                        }]
 
-            if choice == 'audio':
-                audio_format = self.audio_format.get()
-                print(f"Starting audio download (Format: {audio_format})...")
-                ydl_opts.update({
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': audio_format, 'preferredquality': '192'}],
-                })
-                if postprocessor_args:
-                    ydl_opts.setdefault('postprocessor_args', {}).setdefault('extractaudio', []).extend(postprocessor_args)
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([job['url']])
+                
+                job['status'] = 'Complete'
+                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Complete'))
 
-            else: # video
-                video_format = self.video_format.get()
-                print(f"Starting video download (Format: {video_format})...")
-                ydl_opts.update({
-                    'format': f'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext={video_format}]/best',
-                    'merge_output_format': video_format,
-                })
-                if postprocessor_args:
-                     ydl_opts.setdefault('postprocessor_args', {}).setdefault('merger', []).extend(['-c', 'copy'] + postprocessor_args)
+            except Exception as e:
+                job['status'] = 'Error'
+                self.root.after(0, self.queue_tree.item, job['id'], values=(i + 1, job['url'], job['type'].capitalize(), job['format'], f"{job['start_time']} - {job['end_time']}" if job['start_time'] or job['end_time'] else "Full", 'Error'))
+                print(f"\nERROR downloading {job['url']}: {e}")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-        except Exception as e:
-            print(f"\nAn error occurred: {e}")
-        finally:
-            self.download_button.config(state=tk.NORMAL, text="Download")
-            # Schedule the custom dialog to be shown on the main GUI thread
-            self.root.after(0, self.show_completion_dialog, directory)
-
-    def show_completion_dialog(self, directory):
-        """Creates and shows the custom completion dialog."""
-        CompletionDialog(self.root, "Complete", directory)
+        self.is_downloading = False
+        self.root.after(0, self.toggle_controls, True)
+        self.root.after(0, lambda: messagebox.showinfo("Complete", "The download queue has finished processing."))
 
     def yt_dlp_hook(self, d):
         if d['status'] == 'downloading':
-            total_bytes_str = d.get('total_bytes_estimate') or d.get('total_bytes')
-            if total_bytes_str:
-                downloaded_bytes = d.get('downloaded_bytes', 0)
-                percentage = (downloaded_bytes / total_bytes_str) * 100
+            total_bytes = d.get('total_bytes_estimate') or d.get('total_bytes')
+            if total_bytes:
+                percentage = (d.get('downloaded_bytes', 0) / total_bytes) * 100
                 self.progress_bar['value'] = percentage
-                self.root.update_idletasks()
         elif d['status'] == 'finished':
             self.progress_bar['value'] = 100
-            print("\nDownload finished, now processing file...")
-        elif d['status'] == 'error':
-            print("\nAn error occurred during download.")
-            self.progress_bar['value'] = 0
+            print("\nDownload finished, now processing...")
 
 if __name__ == "__main__":
     root = ThemedTk(theme="arc")
